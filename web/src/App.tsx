@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { fetchStatus, fetchI18n, type StatusResponse, type I18nConfig } from '@/lib/api'
 import { LangContext } from '@/lib/lang'
 import { ThemeProvider, useTheme } from '@/lib/theme'
+import { QAProvider } from '@/lib/qa'
 import { MessageSquare, BookOpen, Globe, Sun, Moon, SunMoon, Plug } from 'lucide-react'
 
 const QAPage = lazy(() => import('@/pages/QAPage'))
@@ -105,14 +106,16 @@ export default function App() {
           </div>
         </nav>
         <LangContext.Provider value={{ i18n, activeLang, setActiveLang }}>
-          <Suspense fallback={<RouteFallback />}>
-            <Routes>
-              <Route path="/" element={<QAPage />} />
-              <Route path="/papers" element={<PapersPage />} />
-              <Route path="/papers/:paperId" element={<PaperDetail />} />
-              <Route path="/mcp-guide" element={<MCPPage />} />
-            </Routes>
-          </Suspense>
+          <QAProvider>
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                <Route path="/" element={<QAPage />} />
+                <Route path="/papers" element={<PapersPage />} />
+                <Route path="/papers/:paperId" element={<PaperDetail />} />
+                <Route path="/mcp-guide" element={<MCPPage />} />
+              </Routes>
+            </Suspense>
+          </QAProvider>
         </LangContext.Provider>
       </div>
     </BrowserRouter>
