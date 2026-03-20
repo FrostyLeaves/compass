@@ -1,0 +1,81 @@
+# Compass Configuration
+
+# Embedding settings
+embedding:
+  provider: ollama          # ollama / openai
+  model: bge-m3             # ollama: bge-m3 (multilingual), nomic-embed-text | openai: text-embedding-3-small
+  ollama_base_url: http://localhost:11434
+
+# LLM settings (shared by Compass Q&A + marker-pdf default mode)
+llm:
+  provider: cli          # ollama / claude / openai / codex / cli
+  #model: claude-sonnet-4-6  # claude: claude-sonnet-4-6, claude-opus-4-6 | openai: gpt-4o | codex: codex-mini-latest | ollama: llama3, qwen3
+  #api_base_url: url          # Optional, override API endpoint for any provider
+  #api_key: apikey         # Optional; env vars also work: ANTHROPIC_API_KEY (claude) / OPENAI_API_KEY (openai/codex)
+  # ollama_base_url: http://localhost:11434  # ollama only
+  # Note: for openai/codex, if api_key is not set, auto fallback to ~/.codex/auth.json (codex --login)
+  # CLI provider settings (provider: cli — invoke any LLM via command-line tool):
+  cli_command: claude                  # CLI executable name (claude, codex, etc.)
+  cli_args: ["--print"]                # claude: ["--print"] | codex: ["exec"]
+
+# Storage
+storage:
+  qdrant_path: ./data/qdrant    # Qdrant embedded DB path (ignored when qdrant.url is set)
+  papers_dir: ./data/papers     # Parsed papers (markdown, images, PDF copies)
+
+# PDF parsing (marker-pdf)
+converter:
+  marker:
+    use_llm: false           # Enable LLM mode (improves table/formula/complex region parsing quality)
+    llm_service: default     # default = follow llm config above | claude / openai / codex / ollama / gemini
+    cleanup_markdown: false  # Post-process markdown with LLM to fix layout issues
+    # The following settings only take effect when llm_service is not "default" (overrides llm section):
+    # claude_model_name: claude-sonnet-4-20250514
+    # claude_api_key: sk-xxx
+    # openai_model: gpt-4o
+    # openai_api_key: sk-xxx
+    # ollama_model: llama3
+    # ollama_base_url: http://localhost:11434
+
+
+# Chunking
+ingest:
+  chunk_size: 800           # Child chunk size (characters) — used for retrieval matching
+  chunk_overlap: 100        # Overlap between adjacent chunks
+  parent_chunk_size: 2000   # Parent chunk size for LLM context (0 to disable parent-child chunking)
+
+# Retrieval
+retrieval:
+  top_k: 5                  # Number of top-k results returned per query
+  min_score: 0              # Minimum relevance score threshold (0 = disabled). Results below this are discarded.
+  reranker:
+    enabled: false           # Enable cross-encoder reranker (requires re-ranking model download on first use)
+    model: jinaai/jina-reranker-v2-base-multilingual
+  query_strategy:
+    mode: semantic_with_lexical_fallback  # semantic_only | semantic_with_lexical_boost | semantic_with_lexical_fallback
+    lexical:
+      max_candidates: 3                   # Additional papers to probe when strong title/keyword matches are found
+      min_candidate_score: 0.35           # Ignore weak lexical matches when adding fallback candidates
+      min_strong_title_overlap: 0.6       # Minimum title token overlap ratio to treat a paper as a strong lexical match
+      min_token_length: 2
+      title_exact_boost: 1.0
+      title_substring_boost: 0.35
+      title_token_overlap_weight: 0.35
+      keyword_phrase_boost: 0.2
+      keyword_token_overlap_weight: 0.15
+
+# API server
+api:
+  host: localhost                # Backend bind address (use 0.0.0.0 to allow external access)
+  port: 8000                    # Backend server port
+  # url: http://localhost:8000  # CLI auto-detects; override full URL if needed
+  secret_key: Z6bwUDhsUSARx1EA-6QkwjqTdQopb1vmUr8ufIf7LO0   # Protects write operations (ingest/remove/reindex/audit). Leave empty to disable auth.
+
+# Multi-language translation (uses LLM to translate parsed markdown)
+i18n:
+  enabled: true
+  languages:
+    - code: zh
+      name: 中文
+    - code: en
+      name: English

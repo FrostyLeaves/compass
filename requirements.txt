@@ -1,0 +1,12 @@
+qdrant-client
+ollama
+mcp
+marker-pdf
+anthropic
+openai
+pyyaml
+httpx
+streamlit
+fastapi
+uvicorn
+fastembed
