@@ -104,7 +104,7 @@ By default, local data is stored under:
 Import a paper:
 
 ```bash
-python cli.py ingest https://arxiv.org/pdf/2102.05963
+python cli.py ingest <pdf-url>
 ```
 
 Ask a question:
