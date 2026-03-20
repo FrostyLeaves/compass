@@ -1,32 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import ReactMarkdown from 'react-markdown'
-import remarkMath from 'remark-math'
-import remarkGfm from 'remark-gfm'
-import rehypeKatex from 'rehype-katex'
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
-import 'katex/dist/katex.min.css'
-
-const sanitizeSchema = {
-  ...defaultSchema,
-  attributes: {
-    ...defaultSchema.attributes,
-    span: [...(defaultSchema.attributes?.span ?? []), 'id', 'className'],
-    div: [...(defaultSchema.attributes?.div ?? []), 'className'],
-    code: [...(defaultSchema.attributes?.code ?? []), 'className'],
-    math: ['xmlns'],
-  },
-  tagNames: [...(defaultSchema.tagNames ?? []), 'math', 'semantics', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'annotation'],
-}
 import { fetchPaperContent } from '@/lib/api'
 import { useLang } from '@/lib/lang'
 import { Loader2, ArrowLeft, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-
-/** Convert single-line $$...$$ to multi-line so remark-math treats them as display math. */
-function fixDisplayMath(md: string): string {
-  return md.replace(/^\$\$(.+)\$\$$/gm, '$$$$\n$1\n$$$$')
-}
+import MarkdownContent from '@/components/MarkdownContent'
 
 export default function PaperDetail() {
   const { paperId } = useParams<{ paperId: string }>()
@@ -82,34 +60,7 @@ function PaperDetailContent({ paperId, activeLang }: { paperId: string; activeLa
           </a>
         )}
       </div>
-      <article className="prose prose-neutral max-w-none">
-        <ReactMarkdown
-          remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[[rehypeSanitize, sanitizeSchema], rehypeKatex]}
-          components={{
-            img: ({ src, alt, ...props }) => {
-              let resolvedSrc = src || ''
-              const safeFolder = folder.replace(/\.\./g, '').replace(/[/\\]/g, '')
-              if (resolvedSrc && !resolvedSrc.startsWith('http') && !resolvedSrc.startsWith('/')) {
-                resolvedSrc = `/static/papers/${safeFolder}/${resolvedSrc}`
-              }
-              return <img src={resolvedSrc} alt={alt || ''} {...props} className="max-w-full rounded" />
-            },
-            table: ({ children, ...props }) => (
-              <div className="table-wrapper">
-                <table {...props}>{children}</table>
-              </div>
-            ),
-            span: ({ children, id, ...props }) => {
-              // Strip empty anchor spans like <span id="page-2-1"></span>
-              if (id && !children) return null
-              return <span {...props}>{children}</span>
-            },
-          }}
-        >
-          {fixDisplayMath(content)}
-        </ReactMarkdown>
-      </article>
+      <MarkdownContent content={content} folder={folder} className="prose prose-neutral max-w-none" />
     </div>
   )
 }

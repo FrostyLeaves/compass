@@ -7,6 +7,7 @@ import ScoreBadge from '@/components/ScoreBadge'
 import { askQuestion, localizeTitles, type AskResponse, type SearchResultItem } from '@/lib/api'
 import { useLang } from '@/lib/lang'
 import { Loader2, Send, FileText } from 'lucide-react'
+import MarkdownContent from '@/components/MarkdownContent'
 
 const PAGE_SIZE = 5
 
@@ -70,7 +71,14 @@ export default function QAPage() {
           return (
             <div key={i} className={`flex animate-fade-slide-up ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-lg px-4 py-3 ${m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                <p className="whitespace-pre-wrap text-sm">{m.content}</p>
+                {m.role === 'assistant' ? (
+                  <MarkdownContent
+                    content={m.content}
+                    className="prose prose-neutral prose-sm max-w-none text-sm chat-markdown"
+                  />
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm">{m.content}</p>
+                )}
                 {filtered.length > 0 && (
                   <div className="mt-3 space-y-2">
                     <p className="text-xs text-muted-foreground font-medium">Related Papers ({filtered.length})</p>

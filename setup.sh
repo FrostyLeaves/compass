@@ -10,7 +10,7 @@ yellow() { printf "\033[33m%s\033[0m\n" "$*"; }
 red()    { printf "\033[31m%s\033[0m\n" "$*"; }
 
 # ---------- 1. Python ----------
-green "==> [1/3] Checking Python ..."
+green "==> [1/4] Checking Python ..."
 
 PYTHON=""
 for cmd in python3.12 python3.13 python3; do
@@ -32,7 +32,7 @@ fi
 green "    Using $PYTHON ($($PYTHON --version))"
 
 # ---------- 2. Virtual environment + dependencies ----------
-green "==> [2/3] Setting up virtual environment ..."
+green "==> [2/4] Setting up virtual environment ..."
 
 if [ ! -d ".venv" ]; then
     "$PYTHON" -m venv .venv
@@ -46,8 +46,27 @@ python -m pip install --upgrade pip -q
 python -m pip install -r requirements.txt -q
 green "    Dependencies installed"
 
-# ---------- 3. Ollama ----------
-green "==> [3/3] Checking Ollama ..."
+# ---------- 3. Frontend dependencies ----------
+green "==> [3/4] Setting up frontend dependencies ..."
+
+if ! command -v node &>/dev/null; then
+    red "Error: Node.js is required to install frontend dependencies."
+    red "Install from https://nodejs.org or via: brew install node"
+    exit 1
+fi
+
+if ! command -v npm &>/dev/null; then
+    red "Error: npm is required to install frontend dependencies."
+    red "Install from https://nodejs.org or via: brew install node"
+    exit 1
+fi
+
+green "    Using $(node --version) / $(npm --version)"
+(cd web && npm install)
+green "    Frontend dependencies installed"
+
+# ---------- 4. Ollama ----------
+green "==> [4/4] Checking Ollama ..."
 
 if ! command -v ollama &>/dev/null; then
     yellow "    Ollama is not installed."

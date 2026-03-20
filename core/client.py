@@ -8,6 +8,7 @@ When the server is not running, operations use direct module imports.
 from __future__ import annotations
 
 import time
+from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 
 _SERVER_DETECT_TIMEOUT = 2
@@ -19,12 +20,43 @@ _REMOVE_TIMEOUT = 30
 _AUDIT_TIMEOUT = 300
 _server_online: bool | None = None
 _server_checked_at: float = 0.0
+_server_base_url: str | None = None
+
+
+def _local_api_hosts(host: str) -> list[str]:
+    if host in {"localhost", "127.0.0.1", "::1", "0.0.0.0", "::"}:
+        return ["127.0.0.1", "localhost"]
+    return [host]
+
+
+def _replace_url_host(url: str, host: str) -> str:
+    parts = urlsplit(url)
+    port = parts.port
+    netloc = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    if port is not None:
+        netloc = f"{netloc}:{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
+def _api_url_candidates() -> list[str]:
+    from .config import load_config, get_api_host, get_api_port
+    cfg = load_config()
+    explicit_url = cfg.get("api", {}).get("url")
+    if explicit_url:
+        parts = urlsplit(explicit_url)
+        hosts = _local_api_hosts(parts.hostname or "")
+        candidates: list[str] = []
+        for host in hosts:
+            candidate = _replace_url_host(explicit_url, host)
+            if candidate not in candidates:
+                candidates.append(candidate)
+        return candidates or [explicit_url]
+    port = get_api_port()
+    return [f"http://{host}:{port}" for host in _local_api_hosts(get_api_host())]
 
 
 def _api_url() -> str:
-    from .config import load_config, get_api_port
-    cfg = load_config()
-    return cfg.get("api", {}).get("url", f"http://localhost:{get_api_port()}")
+    return _server_base_url or _api_url_candidates()[0]
 
 
 def _auth_headers() -> dict[str, str]:
@@ -39,16 +71,22 @@ def _auth_headers() -> dict[str, str]:
 
 def is_server_running() -> bool:
     """Check if the API server is reachable (cached with short TTL)."""
-    global _server_online, _server_checked_at
+    global _server_online, _server_checked_at, _server_base_url
     now = time.monotonic()
     if _server_online is not None and (now - _server_checked_at) < _SERVER_CACHE_TTL:
         return _server_online
     import httpx
-    try:
-        resp = httpx.get(f"{_api_url()}/api/status", timeout=_SERVER_DETECT_TIMEOUT)
-        _server_online = resp.status_code == 200
-    except (httpx.ConnectError, httpx.TimeoutException):
-        _server_online = False
+    _server_online = False
+    _server_base_url = None
+    for base_url in _api_url_candidates():
+        try:
+            resp = httpx.get(f"{base_url}/api/status", timeout=_SERVER_DETECT_TIMEOUT)
+            if resp.status_code == 200:
+                _server_online = True
+                _server_base_url = base_url
+                break
+        except (httpx.ConnectError, httpx.TimeoutException):
+            continue
     _server_checked_at = now
     return _server_online
 

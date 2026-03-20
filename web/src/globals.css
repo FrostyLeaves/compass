@@ -96,6 +96,33 @@ input[type="range"],
   overflow-x: auto;
 }
 
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown pre {
+  overflow-x: auto;
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--color-foreground) 4%, var(--color-background));
+  padding: 0.875rem;
+}
+
+.chat-markdown code:not(pre code) {
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--color-foreground) 6%, var(--color-background));
+  padding: 0.125rem 0.375rem;
+}
+
+.chat-markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25rem;
+}
+
 /* Range slider styling */
 input[type="range"] {
   -webkit-appearance: none;
