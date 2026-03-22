@@ -1,6 +1,7 @@
 """Unified LLM generation interface, supporting ollama / claude / openai / codex / cli."""
 
 from __future__ import annotations
+
 from .config import load_config
 
 _DETECT_LANG_MAX_CHARS = 2000
@@ -14,6 +15,92 @@ SYSTEM_PROMPT = (
     "Cite specific paper titles in your answers. Be accurate and concise. "
     "If the retrieved content is insufficient to answer the question, clearly state so."
 )
+
+
+def _context_key(item: dict) -> str:
+    return item.get("paper_id") or item.get("source_path") or item.get("title", "")
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _context_range(item: dict) -> tuple[int, int]:
+    start = _safe_int(item.get("parent_start_chunk_index", item.get("chunk_index", 0)))
+    end = _safe_int(item.get("parent_end_chunk_index", item.get("chunk_index", start)), start)
+    return (min(start, end), max(start, end))
+
+
+def _merge_window_text(left: str, right: str) -> str:
+    if not left:
+        return right
+    if not right:
+        return left
+    if left in right:
+        return right
+    if right in left:
+        return left
+
+    max_overlap = min(len(left), len(right))
+    for size in range(max_overlap, 0, -1):
+        if left[-size:] == right[:size]:
+            return left + right[size:]
+    return left.rstrip() + "\n\n" + right.lstrip()
+
+
+def _merge_context_windows(context: list[dict]) -> list[dict]:
+    merged_groups: dict[str, list[dict]] = {}
+    for item in sorted(context, key=lambda entry: (_context_key(entry), *_context_range(entry))):
+        key = _context_key(item)
+        window = dict(item)
+        window["parent_text"] = item.get("parent_text", item.get("text", ""))
+        start, end = _context_range(item)
+        window["parent_start_chunk_index"] = start
+        window["parent_end_chunk_index"] = end
+        merged_groups.setdefault(key, [])
+        group = merged_groups[key]
+        if group and start <= group[-1]["parent_end_chunk_index"] + 1:
+            existing = group[-1]
+            existing_score = float(existing.get("score", 0.0))
+            window_score = float(window.get("score", 0.0))
+            existing["parent_text"] = _merge_window_text(existing.get("parent_text", ""), window["parent_text"])
+            existing["parent_start_chunk_index"] = min(existing["parent_start_chunk_index"], start)
+            existing["parent_end_chunk_index"] = max(existing["parent_end_chunk_index"], end)
+            existing["score"] = max(existing_score, window_score)
+            existing["chunk_index"] = min(existing.get("chunk_index", start), window.get("chunk_index", start))
+            existing["parent_token_count"] = max(
+                _safe_int(existing.get("parent_token_count", 0)),
+                _safe_int(window.get("parent_token_count", 0)),
+            )
+            existing["content_types"] = sorted(set(existing.get("content_types", [])) | set(window.get("content_types", [])))
+            if window_score > existing_score:
+                existing["section_heading"] = window.get("section_heading", existing.get("section_heading", ""))
+                existing["heading_path"] = window.get("heading_path", existing.get("heading_path", []))
+                existing["heading_path_text"] = window.get("heading_path_text", existing.get("heading_path_text", ""))
+                existing["dominant_content_type"] = window.get(
+                    "dominant_content_type",
+                    existing.get("dominant_content_type", ""),
+                )
+        else:
+            group.append(window)
+
+    merged = [item for group in merged_groups.values() for item in group]
+    merged.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+    return merged
+
+
+def _context_heading(item: dict) -> str:
+    heading_path = [part for part in (item.get("heading_path") or []) if part]
+    title = (item.get("title") or "").strip()
+    if heading_path and heading_path[0].strip() == title:
+        heading_path = heading_path[1:]
+    if heading_path:
+        return " > ".join(heading_path)
+    section_heading = item.get("section_heading", "").strip()
+    return "" if section_heading == title else section_heading
 
 
 def _llm_call(
@@ -52,10 +139,17 @@ def generate(
 
     context: list of results returned by retriever.search()
     """
+    merged_context = _merge_context_windows(context)
+
     # Build context text
     ctx_parts = []
-    for i, item in enumerate(context, 1):
-        ctx_parts.append(f"[{i}] \"{item['title']}\" (relevance: {item['score']:.2f})\n{item.get('parent_text', item['text'])}")
+    for i, item in enumerate(merged_context, 1):
+        heading = _context_heading(item)
+        label = f"[{i}] \"{item['title']}\""
+        if heading:
+            label += f" [{heading}]"
+        label += f" (relevance: {item['score']:.2f})"
+        ctx_parts.append(f"{label}\n{item.get('parent_text', item['text'])}")
     context_text = "\n\n---\n\n".join(ctx_parts)
 
     user_prompt = f"The following are relevant passages retrieved from Compass:\n\n{context_text}\n\nUser question: {question}"

@@ -18,6 +18,7 @@ from qdrant_client.models import (
 
 from .config import load_config, to_absolute
 from .embedder import embed, sparse_embed
+from .text import _estimate_tokens
 from .vectorstore import _COLLECTION, _get_client
 
 _DEFAULT_QUERY_STRATEGY_MODE = "semantic_with_lexical_fallback"
@@ -234,15 +235,30 @@ def _query_points(
 
 
 def _point_to_item(point) -> dict:
-    payload = point.payload
+    payload = point.payload or {}
+    document = payload.get("document", "")
+    chunk_index = _as_int(payload.get("chunk_index"), 0)
+    token_count = _as_int(payload.get("token_count"), _estimate_tokens(document))
+    parent_start = _as_int(payload.get("parent_start_chunk_index"), chunk_index)
+    parent_end = _as_int(payload.get("parent_end_chunk_index"), chunk_index)
     return {
         "paper_id": payload.get("paper_id") or payload.get("content_hash") or "",
         "title": payload["title"],
-        "text": payload["document"],
-        "parent_text": payload.get("parent_text", payload["document"]),
+        "text": document,
+        "parent_text": payload.get("parent_text", document),
         "score": point.score,
         "source_path": to_absolute(payload["source_path"]),
-        "chunk_index": payload["chunk_index"],
+        "chunk_index": chunk_index,
+        "section_heading": payload.get("section_heading", ""),
+        "heading_path": payload.get("heading_path", []),
+        "heading_level": _as_int(payload.get("heading_level"), 0),
+        "heading_path_text": payload.get("heading_path_text", ""),
+        "token_count": token_count,
+        "parent_start_chunk_index": parent_start,
+        "parent_end_chunk_index": parent_end,
+        "parent_token_count": _as_int(payload.get("parent_token_count"), _estimate_tokens(payload.get("parent_text", document))),
+        "content_types": payload.get("content_types", []),
+        "dominant_content_type": payload.get("dominant_content_type", ""),
         "markdown_path": to_absolute(payload.get("markdown_path", "")) if payload.get("markdown_path") else "",
         "pdf_path": to_absolute(payload.get("pdf_path", "")) if payload.get("pdf_path") else "",
         "keywords": payload.get("keywords", []),

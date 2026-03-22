@@ -38,6 +38,11 @@ from .text import _chunk_text, _assign_parent_text, _extract_title, _cleanup_mar
 logger = logging.getLogger("compass")
 
 _DOWNLOAD_CHUNK_SIZE = 65536
+_LEGACY_CHARS_PER_TOKEN = 4
+_DEFAULT_CHUNK_TOKEN_SIZE = 220
+_DEFAULT_CHUNK_TOKEN_OVERLAP = 40
+_DEFAULT_PARENT_CHUNK_TOKEN_SIZE = 600
+_MIN_TOKEN_BUDGET = 48
 
 
 def _hash_file(path: str | Path) -> str:
@@ -54,6 +59,68 @@ def _doc_id(paper_id: str, chunk_index: int) -> str:
 
 def _point_id(paper_id: str, chunk_index: int) -> str:
     return hashlib.md5(_doc_id(paper_id, chunk_index).encode("utf-8")).hexdigest()
+
+
+def _as_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _resolve_token_budget(
+    cfg: dict,
+    *,
+    token_key: str,
+    legacy_key: str,
+    default: int,
+    allow_zero: bool = False,
+    min_value: int = _MIN_TOKEN_BUDGET,
+) -> int:
+    token_value = cfg.get(token_key)
+    if token_value is not None:
+        parsed = _as_int(token_value, default)
+        if allow_zero and parsed <= 0:
+            return 0
+        return max(min_value, parsed)
+
+    legacy_value = cfg.get(legacy_key)
+    if legacy_value is not None:
+        parsed = _as_int(legacy_value, 0)
+        if allow_zero and parsed <= 0:
+            return 0
+        if parsed > 0:
+            return max(min_value, round(parsed / _LEGACY_CHARS_PER_TOKEN))
+
+    if allow_zero and default <= 0:
+        return 0
+    return max(min_value, default)
+
+
+def _resolve_chunking_config(cfg: dict) -> tuple[int, int, int]:
+    return (
+        _resolve_token_budget(
+            cfg,
+            token_key="chunk_token_size",
+            legacy_key="chunk_size",
+            default=_DEFAULT_CHUNK_TOKEN_SIZE,
+        ),
+        _resolve_token_budget(
+            cfg,
+            token_key="chunk_token_overlap",
+            legacy_key="chunk_overlap",
+            default=_DEFAULT_CHUNK_TOKEN_OVERLAP,
+            allow_zero=True,
+            min_value=0,
+        ),
+        _resolve_token_budget(
+            cfg,
+            token_key="parent_chunk_token_size",
+            legacy_key="parent_chunk_size",
+            default=_DEFAULT_PARENT_CHUNK_TOKEN_SIZE,
+            allow_zero=True,
+        ),
+    )
 
 
 def _refresh_paper_metadata(paper_id: str) -> dict | None:
@@ -191,13 +258,14 @@ def _index_paper(
     progress_callback=None,
 ) -> int:
     cfg = load_config()["ingest"]
+    chunk_size, chunk_overlap, parent_chunk_size = _resolve_chunking_config(cfg)
 
     def _progress(stage: str, current: int, total: int) -> None:
         if progress_callback:
             progress_callback(stage, current, total)
 
-    chunks = _chunk_text(text, cfg.get("chunk_size", 800), cfg.get("chunk_overlap", 100))
-    _assign_parent_text(chunks, cfg.get("parent_chunk_size", 0))
+    chunks = _chunk_text(text, chunk_size, chunk_overlap)
+    _assign_parent_text(chunks, parent_chunk_size)
 
     client = _get_client()
     existing = _paper_points(client, paper_id)
@@ -218,8 +286,10 @@ def _index_paper(
         return 0
 
     def _contextual_text(chunk: dict) -> str:
-        section = chunk.get("section_heading", "")
-        prefix = f"{title} > {section}" if section else title
+        heading_path = list(chunk.get("heading_path") or [])
+        if heading_path and heading_path[0].strip() == title.strip():
+            heading_path = heading_path[1:]
+        prefix = " > ".join([title, *heading_path]) if heading_path else title
         return f"{prefix}: {chunk['text']}"
 
     embed_texts = [_contextual_text(chunk) for chunk in chunks]
@@ -255,6 +325,16 @@ def _index_paper(
                 "title": title,
                 "source_path": rel_pdf,
                 "chunk_index": chunk["chunk_index"],
+                "section_heading": chunk.get("section_heading", ""),
+                "heading_path": chunk.get("heading_path", []),
+                "heading_level": chunk.get("heading_level", 0),
+                "heading_path_text": chunk.get("heading_path_text", ""),
+                "token_count": chunk.get("token_count", 0),
+                "parent_start_chunk_index": chunk.get("parent_start_chunk_index", chunk["chunk_index"]),
+                "parent_end_chunk_index": chunk.get("parent_end_chunk_index", chunk["chunk_index"]),
+                "parent_token_count": chunk.get("parent_token_count", chunk.get("token_count", 0)),
+                "content_types": chunk.get("content_types", []),
+                "dominant_content_type": chunk.get("dominant_content_type", ""),
                 "markdown_path": rel_md,
                 "pdf_path": rel_pdf,
                 "source_url": primary_url,
